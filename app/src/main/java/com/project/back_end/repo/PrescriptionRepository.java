@@ -1,6 +1,11 @@
 package com.project.back_end.repo;
 
-public interface PrescriptionRepository  {
+import com.project.back_end.models.Prescription;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface PrescriptionRepository extends JpaRepository<Prescription, Long> {
 // 1. Extend MongoRepository:
 //    - The repository extends MongoRepository<Prescription, String>, which provides basic CRUD functionality for MongoDB.
 //    - This allows the repository to perform operations like save, delete, update, and find without needing to implement these methods manually.
