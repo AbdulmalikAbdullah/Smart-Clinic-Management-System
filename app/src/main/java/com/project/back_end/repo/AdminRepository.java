@@ -4,6 +4,8 @@ import com.project.back_end.models.Admin;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Repository
 public interface AdminRepository extends JpaRepository<Admin,Long> {
 
@@ -23,7 +25,7 @@ public interface AdminRepository extends JpaRepository<Admin,Long> {
 //      - If no Admin is found with the given username, it returns null.
 
 // Example: public Admin findByUsername(String username);
-    public Admin findByUsername(String username);
+    Optional<Admin> findByUsername(String username);
 
 // 3. Add @Repository annotation:
 //    - The @Repository annotation marks this interface as a Spring Data JPA repository.
