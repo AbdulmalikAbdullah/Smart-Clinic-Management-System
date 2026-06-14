@@ -1,52 +1,147 @@
 package com.project.back_end.controllers;
 
+import com.project.back_end.DTO.AppointmentDTO;
+import com.project.back_end.DTO.Login;
+import com.project.back_end.models.Patient;
+import com.project.back_end.repo.PatientRepository;
+import com.project.back_end.services.PatientService;
+import com.project.back_end.services.Service;
+import com.project.back_end.services.TokenService;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+@RestController
+@RequestMapping("/patient")
 public class PatientController {
 
-// 1. Set Up the Controller Class:
-//    - Annotate the class with `@RestController` to define it as a REST API controller for patient-related operations.
-//    - Use `@RequestMapping("/patient")` to prefix all endpoints with `/patient`, grouping all patient functionalities under a common route.
+    private final PatientService patientService;
+    private final Service service;
+    private final TokenService tokenService;
+    private final PatientRepository patientRepository;
 
+    @Autowired
+    public PatientController(PatientService patientService,
+                             Service service,
+                             TokenService tokenService,
+                             PatientRepository patientRepository) {
+        this.patientService = patientService;
+        this.service = service;
+        this.tokenService = tokenService;
+        this.patientRepository = patientRepository;
+    }
 
-// 2. Autowire Dependencies:
-//    - Inject `PatientService` to handle patient-specific logic such as creation, retrieval, and appointments.
-//    - Inject the shared `Service` class for tasks like token validation and login authentication.
+    @GetMapping("/{token}")
+    public ResponseEntity<?> getPatient(@PathVariable String token) {
+        if (!service.validateToken(token, "patient")) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Invalid or expired token");
+            return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+        }
 
+        String email = tokenService.extractEmail(token);
+        Optional<Patient> patient = patientRepository.findByEmail(email);
+        if (!patient.isPresent()) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Patient not found");
+            return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+        }
 
-// 3. Define the `getPatient` Method:
-//    - Handles HTTP GET requests to retrieve patient details using a token.
-//    - Validates the token for the `"patient"` role using the shared service.
-//    - If the token is valid, returns patient information; otherwise, returns an appropriate error message.
+        Map<String, Object> response = new HashMap<>();
+        response.put("patient", patient.get());
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
 
+    @PostMapping
+    public ResponseEntity<?> createPatient(@Valid @RequestBody Patient patient) {
+        if (!service.validatePatient(patient.getEmail(), patient.getPhone())) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Patient with this email or phone already exists");
+            return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+        }
 
-// 4. Define the `createPatient` Method:
-//    - Handles HTTP POST requests for patient registration.
-//    - Accepts a validated `Patient` object in the request body.
-//    - First checks if the patient already exists using the shared service.
-//    - If validation passes, attempts to create the patient and returns success or error messages based on the outcome.
+        int result = patientService.createPatient(patient);
+        if (result == 1) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Patient created successfully");
+            return new ResponseEntity<>(response, HttpStatus.CREATED);
+        }
 
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Failed to create patient");
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 
-// 5. Define the `login` Method:
-//    - Handles HTTP POST requests for patient login.
-//    - Accepts a `Login` DTO containing email/username and password.
-//    - Delegates authentication to the `validatePatientLogin` method in the shared service.
-//    - Returns a response with a token or an error message depending on login success.
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody Login login) {
+        return service.validatePatientLogin(login);
+    }
 
+    @GetMapping("/{id}/{user}/{token}")
+    public ResponseEntity<?> getPatientAppointment(@PathVariable long id,
+                                                   @PathVariable String user,
+                                                   @PathVariable String token) {
+        if (!service.validateToken(token, user)) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Invalid or expired token");
+            return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+        }
 
-// 6. Define the `getPatientAppointment` Method:
-//    - Handles HTTP GET requests to fetch appointment details for a specific patient.
-//    - Requires the patient ID, token, and user role as path variables.
-//    - Validates the token using the shared service.
-//    - If valid, retrieves the patient's appointment data from `PatientService`; otherwise, returns a validation error.
+        List<AppointmentDTO> appointments = patientService.getPatientAppointment(id);
+        Map<String, Object> response = new HashMap<>();
+        response.put("appointments", appointments);
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
 
+    @GetMapping("/filter/{condition}/{name}/{token}")
+    public ResponseEntity<?> filterPatientAppointment(@PathVariable String condition,
+                                                      @PathVariable String name,
+                                                      @PathVariable String token) {
+        if (!service.validateToken(token, "patient")) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Invalid or expired token");
+            return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+        }
 
-// 7. Define the `filterPatientAppointment` Method:
-//    - Handles HTTP GET requests to filter a patient's appointments based on specific conditions.
-//    - Accepts filtering parameters: `condition`, `name`, and a token.
-//    - Token must be valid for a `"patient"` role.
-//    - If valid, delegates filtering logic to the shared service and returns the filtered result.
+        String email = tokenService.extractEmail(token);
+        Optional<Patient> patient = patientRepository.findByEmail(email);
+        if (!patient.isPresent()) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Patient not found");
+            return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+        }
 
+        long patientId = patient.get().getId();
+        String normalizedCondition = normalizeParam(condition);
+        String normalizedName = normalizeParam(name);
 
+        List<AppointmentDTO> appointments;
+        if (normalizedCondition != null && normalizedName != null) {
+            appointments = patientService.filterByDoctorAndCondition(patientId, normalizedName, normalizedCondition);
+        } else if (normalizedCondition != null) {
+            appointments = patientService.filterByCondition(patientId, normalizedCondition);
+        } else if (normalizedName != null) {
+            appointments = patientService.filterByDoctor(patientId, normalizedName);
+        } else {
+            appointments = patientService.getPatientAppointment(patientId);
+        }
 
+        Map<String, Object> response = new HashMap<>();
+        response.put("appointments", appointments);
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    private String normalizeParam(String param) {
+        if (param == null || param.isEmpty() || "null".equalsIgnoreCase(param)) {
+            return null;
+        }
+        return param;
+    }
 }
-
-

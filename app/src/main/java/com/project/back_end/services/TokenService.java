@@ -1,5 +1,17 @@
 package com.project.back_end.services;
 
+import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.Claims;
+import javax.crypto.SecretKey;
+import java.util.Date;
+import com.project.back_end.repo.AdminRepository;
+import com.project.back_end.repo.DoctorRepository;
+import com.project.back_end.repo.PatientRepository;
+
+@Component
 public class TokenService {
 // 1. **@Component Annotation**
 // The @Component annotation marks this class as a Spring component, meaning Spring will manage it as a bean within its application context.
@@ -39,5 +51,71 @@ public class TokenService {
 // - The method gracefully handles any errors by returning false if the token is invalid or an exception occurs.
 // This ensures secure access control based on the user's role and their existence in the system.
 
+  private final AdminRepository adminRepository;
+  private final DoctorRepository doctorRepository;
+  private final PatientRepository patientRepository;
+
+  @Value("${jwt.secret}")
+  private String jwtSecret;
+
+  @Value("${jwt.expiration}")
+  private long jwtExpiration;
+
+  public TokenService(AdminRepository adminRepository, DoctorRepository doctorRepository, PatientRepository patientRepository) {
+    this.adminRepository = adminRepository;
+    this.doctorRepository = doctorRepository;
+    this.patientRepository = patientRepository;
+  }
+
+  private SecretKey getSigningKey() {
+    return Keys.hmacShaKeyFor(jwtSecret.getBytes());
+  }
+
+  public String generateToken(String email) {
+    Date now = new Date();
+    Date expiryDate = new Date(now.getTime() + jwtExpiration);
+
+    return Jwts.builder()
+        .subject(email)
+        .issuedAt(now)
+        .expiration(expiryDate)
+        .signWith(getSigningKey())
+        .compact();
+  }
+
+  public String extractEmail(String token) {
+    try {
+      Claims claims = Jwts.parser()
+          .setSigningKey(getSigningKey())
+          .build()
+          .parseClaimsJws(token)
+          .getBody();
+      return claims.getSubject();
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
+  public boolean validateToken(String token, String role) {
+    try {
+      String email = extractEmail(token);
+      if (email == null) {
+        return false;
+      }
+
+      switch (role.toLowerCase()) {
+        case "admin":
+          return adminRepository.findByUsername(email).isPresent();
+        case "doctor":
+          return doctorRepository.findByEmail(email).isPresent();
+        case "patient":
+          return patientRepository.findByEmail(email).isPresent();
+        default:
+          return false;
+      }
+    } catch (Exception e) {
+      return false;
+    }
+  }
 
 }
